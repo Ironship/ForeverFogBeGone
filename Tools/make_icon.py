@@ -38,7 +38,7 @@ S = BIG / 64.0   # everything below is in 64-pixel units, scaled up to draw
 def disc(size):
     """The dark round plate the rest sits on."""
     img = Image.new("RGBA", (size, size), (0, 0, 0, 0))
-    pad = 1.5 * S
+    pad = 0.8 * S
     grad = Image.new("RGBA", (size, size), (0, 0, 0, 0))
     gd = ImageDraw.Draw(grad)
     for y in range(size):
@@ -65,7 +65,7 @@ def disc(size):
     return Image.alpha_composite(img, ring)
 
 
-def fog(size):
+def fog(size, cold=False):
     """Three bands: a soft halo for body, a hard core so it survives shrinking."""
     halo = Image.new("RGBA", (size, size), (0, 0, 0, 0))
     hd = ImageDraw.Draw(halo)
@@ -76,13 +76,15 @@ def fog(size):
     ]
     for y, x0, x1, thickness, alpha in bands:
         hd.rounded_rectangle([x0, y - thickness / 2, x1, y + thickness / 2],
-                             radius=thickness / 2, fill=(206, 226, 246, alpha))
+                             radius=thickness / 2,
+                             fill=(150, 176, 206, alpha) if cold else (206, 226, 246, alpha))
     halo = halo.filter(ImageFilter.GaussianBlur(radius=1.3 * S))
     core = Image.new("RGBA", (size, size), (0, 0, 0, 0))
     cd = ImageDraw.Draw(core)
     for y, x0, x1, thickness, alpha in bands:
         cd.rounded_rectangle([x0 + 1.6 * S, y - thickness / 3.2, x1 - 1.6 * S, y + thickness / 3.2],
-                             radius=thickness / 3.2, fill=(255, 255, 255, 255))
+                             radius=thickness / 3.2,
+                             fill=(198, 214, 232, 255) if cold else (255, 255, 255, 255))
     return Image.alpha_composite(halo, core)
 
 
@@ -98,16 +100,30 @@ def slash(size):
     return layer
 
 
-def build(size):
+def build(size, struck=True):
+    """struck: the sign with the stroke through it -- the fog is gone.
+
+    Without it the same picture says the opposite: the fog is there. The
+    button swaps between the two, because greying one icon out to mean "off"
+    took the red stroke -- the only part that carries the meaning -- and turned
+    it into another grey bar. Seen in the game at twenty pixels, next to
+    Blizzard's own saturated buttons, it read as a disabled control.
+    """
     img = disc(size)
-    img = Image.alpha_composite(img, fog(size))
-    return Image.alpha_composite(img, slash(size))
+    img = Image.alpha_composite(img, fog(size, cold=not struck))
+    if struck:
+        img = Image.alpha_composite(img, slash(size))
+    return img
 
 
 def main():
     big = build(BIG)
     tga = big.resize((64, 64), Image.LANCZOS)
     tga.save(HERE / "icon.tga")
+
+    # The other state: fog, unstruck.
+    foggy = build(BIG, struck=False)
+    foggy.resize((64, 64), Image.LANCZOS).save(HERE / "icon-fog.tga")
 
     page = HERE / "curseforge"
     page.mkdir(exist_ok=True)
@@ -117,15 +133,18 @@ def main():
     if "--preview" in sys.argv:
         # The sizes it is actually seen at: the minimap icon is about 20.
         sizes = [64, 32, 20, 16]
-        strip = Image.new("RGBA", (sum(sizes) + 20 * len(sizes), 80), (70, 90, 60, 255))
+        strip = Image.new("RGBA", (2 * (sum(sizes) + 20 * len(sizes)), 80), (70, 90, 60, 255))
         x = 10
-        for s in sizes:
-            strip.paste(big.resize((s, s), Image.LANCZOS), (x, (80 - s) // 2), big.resize((s, s), Image.LANCZOS))
-            x += s + 20
+        for source in (big, foggy):
+            for s in sizes:
+                small = source.resize((s, s), Image.LANCZOS)
+                strip.paste(small, (x, (80 - s) // 2), small)
+                x += s + 20
+            x += 30
         strip.resize((strip.width * 3, strip.height * 3), Image.NEAREST).save(page / "preview-sizes.png")
         print("preview: %s" % (page / "preview-sizes.png"))
 
-    for p in (HERE / "icon.tga", page / "foreverfogbegone-400.png"):
+    for p in (HERE / "icon.tga", HERE / "icon-fog.tga", page / "foreverfogbegone-400.png"):
         print("%-44s %6.1f kB" % (p.relative_to(HERE), p.stat().st_size / 1024))
     head = (HERE / "icon.tga").read_bytes()[:18]
     print("TGA: type %d (2 = uncompressed truecolour), %d bits, %dx%d" % (

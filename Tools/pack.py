@@ -95,11 +95,13 @@ def check(archive, expected=None):
             absent = [l for l in loads if l not in written]
             if absent:
                 problems.append("%s loads missing %s" % (toc.rsplit("/", 1)[-1], absent))
-        # The manifest points the client at a texture by path, and no manifest
-        # line names it, so nothing else here would notice it missing.
-        icon = "%s/icon.tga" % NAME
-        if icon not in written:
-            problems.append("no icon.tga -- the button would be a blank square")
+        # The manifest points the client at these by path and no manifest line
+        # names them, so nothing else here would notice one missing -- and the
+        # second only appears when the fog is on, which is the state a first
+        # look at the addon is least likely to be in.
+        for texture in ("icon.tga", "icon-fog.tga"):
+            if ("%s/" + texture) % NAME not in written:
+                problems.append("no " + texture + " -- the button would be a blank square")
         bad = z.testzip()
         if bad:
             problems.append("CRC failed at %s" % bad)

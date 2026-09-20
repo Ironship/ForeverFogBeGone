@@ -115,14 +115,20 @@ for _, pair in ipairs(recorded.cvars) do
   assert(pair[1] == "volumeFog", "nothing else was written: " .. pair[1])
 end
 
--- 3. The picture follows the setting: lit when the fog is gone, grey when back.
+-- 3. The picture follows the setting, by being a different picture. Dimming
+-- one icon was the first attempt and it lost the only part that carries the
+-- meaning; the test asks for the swap so that nobody puts the dimming back.
 local icon = button.children[1]
 store.volumeFog = "0"
 onEvent(nil, "CVAR_UPDATE", "volumeFog")
-assert(icon.desaturated == false, "no fog: the sign is lit")
+assert(icon.path == "Interface\\AddOns\\ForeverFogBeGone\\icon",
+  "no fog: the struck sign, got " .. tostring(icon.path))
 store.volumeFog = "1"
 onEvent(nil, "CVAR_UPDATE", "volumeFog")
-assert(icon.desaturated == true, "fog back: the sign is greyed")
+assert(icon.path == "Interface\\AddOns\\ForeverFogBeGone\\icon-fog",
+  "fog back: plain fog, got " .. tostring(icon.path))
+assert(icon.colour == nil or (icon.colour[1] == 1 and icon.colour[2] == 1 and icon.colour[3] == 1),
+  "and neither state is dimmed: the button is not a disabled control")
 
 -- 4. In combat it refuses rather than erroring, and says why.
 recorded.inCombat = true

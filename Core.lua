@@ -12,7 +12,8 @@ local ADDON_NAME = ...
 
 local CVAR = "volumeFog"
 local DEFAULT_ANGLE = 198        -- lower left, clear of the tracking button and the clock
-local ICON = "Interface\\AddOns\\" .. ADDON_NAME .. "\\icon"
+local ICON_CLEAR = "Interface\\AddOns\\" .. ADDON_NAME .. "\\icon"      -- fog struck through
+local ICON_FOG   = "Interface\\AddOns\\" .. ADDON_NAME .. "\\icon-fog"  -- fog, unstruck
 
 -- math.atan2 is in Lua 5.1 and the client still has it, but it is deprecated
 -- upstream and a client that drops it would take the button's drag with it and
@@ -54,22 +55,26 @@ local function say(text)
   end
 end
 
--- The icon is the "no fog" sign, so it is lit when there is no fog and greyed
--- when the fog is back: the button shows what it has done, not what it will do.
+-- Two pictures, not one picture dimmed. The button shows the state it is in:
+-- fog struck through when there is no fog, plain fog when there is.
+--
+-- The first version greyed the icon out instead, and seen in the game that
+-- took the red stroke -- the only part of the drawing that carries the
+-- meaning -- and turned it into a third grey bar. Beside Blizzard's own
+-- saturated minimap buttons it read as a control that was switched off, which
+-- is the wrong thing for a working button to say about itself.
 local function refresh()
   if not button then return end
   local on = fogIsOn()
   if on == nil then
-    button.icon:SetDesaturated(true)
-    button.icon:SetVertexColor(0.5, 0.5, 0.5)
+    -- No such setting on this client. Show the fog, unstruck, dimmed a little,
+    -- and let the tooltip say why: there is nothing here to turn off.
+    button.icon:SetTexture(ICON_FOG)
+    button.icon:SetVertexColor(0.7, 0.7, 0.7)
     return
   end
-  button.icon:SetDesaturated(on and true or false)
-  if on then
-    button.icon:SetVertexColor(0.65, 0.65, 0.7)
-  else
-    button.icon:SetVertexColor(1, 1, 1)
-  end
+  button.icon:SetTexture(on and ICON_FOG or ICON_CLEAR)
+  button.icon:SetVertexColor(1, 1, 1)
 end
 
 local function position()
@@ -135,8 +140,8 @@ local function build()
   button:SetMovable(true)
 
   local icon = button:CreateTexture(nil, "ARTWORK")
-  icon:SetTexture(ICON)
-  icon:SetSize(19, 19)
+  icon:SetTexture(ICON_CLEAR)
+  icon:SetSize(20, 20)
   icon:SetPoint("CENTER", button, "CENTER", 0, 1)
   -- A round icon inside a round border: trimming the corners keeps the disc
   -- from touching the ring.
@@ -147,11 +152,6 @@ local function build()
   border:SetTexture("Interface\\Minimap\\MiniMap-TrackingBorder")
   border:SetSize(53, 53)
   border:SetPoint("TOPLEFT", button, "TOPLEFT", 0, 0)
-
-  local pushed = button:CreateTexture(nil, "BACKGROUND")
-  pushed:SetTexture("Interface\\Minimap\\UI-Minimap-Background")
-  pushed:SetAllPoints(icon)
-  pushed:SetAlpha(0.55)
 
   button:SetHighlightTexture("Interface\\Minimap\\UI-Minimap-ZoomButton-Highlight")
   button:SetScript("OnClick", toggle)
