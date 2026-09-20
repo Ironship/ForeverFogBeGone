@@ -59,6 +59,12 @@ fog; where it does not, the button says so.
 
 <img width="326" height="333" alt="image" src="https://github.com/user-attachments/assets/f58bd104-dafc-4a17-aa03-490b893a2c48" />
 
+<img width="2560" height="1440" alt="image" src="https://github.com/user-attachments/assets/30f863b2-0a99-4dc7-9798-806546722d63" />
+
+<img width="2560" height="1440" alt="image" src="https://github.com/user-attachments/assets/97fb06ff-6406-4974-938e-01de4d116d75" />
+
+
+
 
 
 
