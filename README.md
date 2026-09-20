@@ -11,20 +11,17 @@ time the console settings are wiped.
 
 ## Using it
 
+<img width="2560" height="1440" alt="image" src="https://github.com/user-attachments/assets/6fb6549f-263e-42ed-b12e-98482a50662d" />
+
+<img width="2560" height="1440" alt="image" src="https://github.com/user-attachments/assets/32961dc4-38e8-43aa-8920-28b1e7460e05" />
+
+
 Click the button. The sign is lit when the fog is off — the button shows what
 it has done, not what it will do — and greyed when the fog is back. Drag it
 to move it around the minimap; where you put it is remembered.
 
-| command | what it does |
-| --- | --- |
-| `/fogbegone`, `/ffbg` | the same as clicking |
-| `/ffbg hide` | put the button away; the command still works |
-| `/ffbg show` | bring it back |
-| `/ffbg reset` | put it back where it started |
-
 It will not change the setting while you are in combat, and says so rather
-than failing quietly. On a client that has no `volumeFog` setting it says
-that too, instead of erroring.
+than failing quietly.
 
 ## What is in it
 
