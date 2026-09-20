@@ -52,3 +52,13 @@ python Tools/make_icon.py --preview
 World of Warcraft: Forever (interface 16001) and Retail 12.1 share a manifest;
 Classic Era has its own. The setting exists wherever the client has volumetric
 fog; where it does not, the button says so.
+
+<img width="2560" height="1440" alt="image" src="https://github.com/user-attachments/assets/618cb84d-3a8c-4adf-a952-78cd610f3dbc" />
+
+<img width="2560" height="1440" alt="image" src="https://github.com/user-attachments/assets/0327fdaf-57c1-4766-a5ae-d597b5943afc" />
+
+<img width="326" height="333" alt="image" src="https://github.com/user-attachments/assets/f58bd104-dafc-4a17-aa03-490b893a2c48" />
+
+
+
+
