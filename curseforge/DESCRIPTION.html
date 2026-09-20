@@ -1,0 +1,22 @@
+<p>Volumetric fog makes some zones look like soup. There is a console setting that turns it off, and this is a button for it.</p>
+<p>Click the button on your minimap: the fog is gone. Click it again: it is back. That is the whole addon.</p>
+<h3>What it does, exactly</h3>
+<p>It sets <code>volumeFog</code> to 0, which is what <code>/console volumeFog 0</code> does — without you having to remember the name of the setting or type it again after the console settings are wiped.</p>
+<h3>The button</h3>
+<ul>
+<li>The sign is <strong>lit</strong> when the fog is off and <strong>greyed</strong> when it is back, so it shows what it has done rather than what it will do.</li>
+<li>Drag it around the minimap; where you leave it is remembered.</li>
+<li>Change the setting in the graphics options instead and the button notices, so it never shows the opposite of the truth.</li>
+</ul>
+<h3>Commands</h3>
+<table><thead><tr><th>Command</th><th>What it does</th></tr></thead><tbody>
+<tr><td><code>/fogbegone</code>, <code>/ffbg</code></td><td>the same as clicking</td></tr>
+<tr><td><code>/ffbg hide</code></td><td>put the button away; the command still works</td></tr>
+<tr><td><code>/ffbg show</code></td><td>bring it back</td></tr>
+<tr><td><code>/ffbg reset</code></td><td>put it back where it started</td></tr>
+</tbody></table>
+<h3>Two things it refuses to do</h3>
+<p>It will not change the setting while you are in combat, where it is protected on some builds, and says so instead of failing quietly. On a client that has no <code>volumeFog</code> setting it tells you that, rather than taking the missing setting for "fog is on" and then blaming the write that fails.</p>
+<h3>No libraries</h3>
+<p>One Lua file and one icon. LibDBIcon would be four files and a dependency for a single button, and this addon is a single button.</p>
+<p>Works on Retail, on Classic Era, and on World of Warcraft: Forever. Source: <a href="https://github.com/Ironship/ForeverFogBeGone" target="_blank" rel="nofollow">github.com/Ironship/ForeverFogBeGone</a>.</p>

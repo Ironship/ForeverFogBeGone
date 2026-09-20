@@ -7,3 +7,4 @@ enable-nolib-creation: no
 ignore:
   - Tools
   - curseforge
+  - tests
