@@ -1,0 +1,5 @@
+# The icon is binary. Git works that out on its own, but core.autocrlf is on
+# globally on the machine this is built from, and a line-ending conversion
+# applied to a TGA is silent and total.
+*.tga binary
+*.png binary

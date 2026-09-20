@@ -1,0 +1,9 @@
+# What the CurseForge packager should leave out: the drawing script and
+# the page artwork are how the addon is made, not part of it.
+package-as: ForeverFogBeGone
+
+enable-nolib-creation: no
+
+ignore:
+  - Tools
+  - curseforge

@@ -1,0 +1,9 @@
+## Interface: 120100, 16001
+## Title: ForeverFogBeGone!
+## Notes: One button on the minimap: click it to switch the volumetric fog off, click again to bring it back.
+## IconTexture: Interface\AddOns\ForeverFogBeGone\icon
+## Author: Ironship
+## Version: 1.0.0
+## SavedVariables: ForeverFogBeGoneDB
+
+Core.lua
