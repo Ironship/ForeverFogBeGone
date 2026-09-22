@@ -16,12 +16,23 @@ time the console settings are wiped.
 <img width="2560" height="1440" alt="image" src="https://github.com/user-attachments/assets/32961dc4-38e8-43aa-8920-28b1e7460e05" />
 
 
-Click the button. The sign is lit when the fog is off — the button shows what
-it has done, not what it will do — and greyed when the fog is back. Drag it
-to move it around the minimap; where you put it is remembered.
+**Left-click** for the fog. The sign is lit when the fog is off — the button
+shows what it has done, not what it will do — and greyed when the fog is back.
+Drag it to move it around the minimap; where you put it is remembered.
+
+**Right-click** for sharpening. `ResampleAlwaysSharpen` decides whether the
+picture is sharpened after being resampled, which is what happens whenever the
+game is not drawing at the monitor's own resolution. There is no tick box for
+it. The icon does not change for this one: it says the fog.
 
 It will not change the setting while you are in combat, and says so rather
 than failing quietly.
+
+`/ffbg cvars <text>` lists the client's own console variables whose name
+contains that text, with their current value and the client's description of
+each. Nothing on disk knows what a client supports — `Config.wtf` holds only
+what somebody has already changed — so the client is asked instead. That is
+how to find the next setting worth a button.
 
 ## What is in it
 

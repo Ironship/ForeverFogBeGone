@@ -1,9 +1,9 @@
 ## Interface: 11509
 ## Title: ForeverFogBeGone!
-## Notes: One button on the minimap: click it to switch the volumetric fog off, click again to bring it back.
+## Notes: One button on the minimap. Left-click switches the volumetric fog off and on, right-click does the same for sharpening after upscaling. Neither has a tick box in the options.
 ## IconTexture: Interface\AddOns\ForeverFogBeGone\icon
 ## Author: Ironship
-## Version: 1.0.0
+## Version: 1.1.0
 ## SavedVariables: ForeverFogBeGoneDB
 
 Core.lua

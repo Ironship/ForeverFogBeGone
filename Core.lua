@@ -11,6 +11,11 @@ local ADDON_NAME = ...
 -- be four files and a dependency for one icon, and this addon is one icon.
 
 local CVAR = "volumeFog"
+-- The right mouse button's setting. Sharpening after the picture has been
+-- resampled: it matters whenever the game is not rendering at the monitor's
+-- own resolution, which is most of the time once render scale or an upscaler
+-- is in play, and there is no tick box for it in the options.
+local SHARPEN_CVAR = "ResampleAlwaysSharpen"
 local DEFAULT_ANGLE = 198        -- lower left, clear of the tracking button and the clock
 local ICON_CLEAR = "Interface\\AddOns\\" .. ADDON_NAME .. "\\icon"      -- fog struck through
 local ICON_FOG   = "Interface\\AddOns\\" .. ADDON_NAME .. "\\icon-fog"  -- fog, unstruck
@@ -46,6 +51,12 @@ end
 local function fogIsOn()
   local value = getCVar(CVAR)
   if value == nil then return nil end       -- the client does not have this setting
+  return value ~= "0" and value ~= 0
+end
+
+local function sharpenIsOn()
+  local value = getCVar(SHARPEN_CVAR)
+  if value == nil then return nil end
   return value ~= "0" and value ~= 0
 end
 
@@ -102,6 +113,31 @@ local function toggle()
   say(on and "volumetric fog |cff7fdc7foff|r" or "volumetric fog |cffdc7f7fback on|r")
 end
 
+local function toggleSharpen()
+  local on = sharpenIsOn()
+  if on == nil then
+    say("this client has no |cffffd100" .. SHARPEN_CVAR .. "|r setting")
+    return
+  end
+  local ok, err = setCVar(SHARPEN_CVAR, on and "0" or "1")
+  if not ok then
+    say("could not change it: " .. tostring(err))
+    return
+  end
+  say(on and "sharpening |cffdc7f7foff|r" or "sharpening |cff7fdc7fon|r")
+end
+
+-- Left for the fog, right for the sharpening. The icon keeps showing the fog
+-- and only the fog: one picture cannot say two things, and the fog is the one
+-- the addon is named after.
+local function onClick(self, mouseButton)
+  if mouseButton == "RightButton" then
+    toggleSharpen()
+  else
+    toggle()
+  end
+end
+
 local function tooltip(self)
   if not GameTooltip then return end
   GameTooltip:SetOwner(self, "ANCHOR_LEFT")
@@ -113,6 +149,13 @@ local function tooltip(self)
     GameTooltip:AddLine(on and "Volumetric fog is |cffdc7f7fon|r."
                            or "Volumetric fog is |cff7fdc7foff|r.", nil, nil, nil, true)
     GameTooltip:AddLine(on and "Click to turn it off." or "Click to turn it back on.",
+      0.7, 0.7, 0.7, true)
+  end
+  local sharp = sharpenIsOn()
+  if sharp ~= nil then
+    GameTooltip:AddLine(sharp and "Sharpening is |cff7fdc7fon|r."
+                            or "Sharpening is |cffdc7f7foff|r.", nil, nil, nil, true)
+    GameTooltip:AddLine("Right-click to turn it " .. (sharp and "off." or "on."),
       0.7, 0.7, 0.7, true)
   end
   GameTooltip:AddLine("Drag to move around the minimap.", 0.5, 0.5, 0.5, true)
@@ -154,7 +197,7 @@ local function build()
   border:SetPoint("TOPLEFT", button, "TOPLEFT", 0, 0)
 
   button:SetHighlightTexture("Interface\\Minimap\\UI-Minimap-ZoomButton-Highlight")
-  button:SetScript("OnClick", toggle)
+  button:SetScript("OnClick", onClick)
   button:SetScript("OnEnter", tooltip)
   button:SetScript("OnLeave", function() if GameTooltip then GameTooltip:Hide() end end)
   button:SetScript("OnDragStart", function(self) self:SetScript("OnUpdate", onDrag) end)
@@ -183,6 +226,7 @@ frame:SetScript("OnEvent", function(_, event, arg1)
   elseif event == "CVAR_UPDATE" then
     -- arg1 is the variable's name on most builds and its display name on some,
     -- so the comparison is loose and a needless redraw costs nothing.
+    -- Only the fog changes the picture, so only the fog has to redraw it.
     if button and (arg1 == nil or tostring(arg1):lower():find("fog")) then refresh() end
   end
 end)
@@ -200,6 +244,38 @@ SlashCmdList["FOREVERFOGBEGONE"] = function(input)
     db.hidden = true
     if button then button:Hide() end
     say("button hidden -- |cffffd100/ffbg show|r brings it back, |cffffd100/ffbg|r still toggles the fog")
+  elseif command == "sharpen" then
+    toggleSharpen()
+  elseif command:match("^cvars") then
+    -- What else is there? Nothing on disk knows: Config.wtf holds only the
+    -- settings somebody has already changed. The client knows the whole list
+    -- and this asks it.
+    local filter = command:match("^cvars%s+(.+)$")
+    local all = C_Console and C_Console.GetAllCommands and C_Console.GetAllCommands()
+    if type(all) ~= "table" then
+      say("this client will not list its console variables")
+      return
+    end
+    local shown = 0
+    for _, entry in ipairs(all) do
+      local name = entry and entry.command
+      if type(name) == "string" and (not filter or name:lower():find(filter, 1, true)) then
+        -- commandType 0 is a variable; anything else is a command, which has
+        -- no value to read and nothing to put on a button.
+        if entry.commandType == nil or entry.commandType == 0 then
+          shown = shown + 1
+          if shown <= 40 then
+            say(("|cffffd100%s|r = %s  %s"):format(
+              name, tostring(getCVar(name)), tostring(entry.help or "")))
+          end
+        end
+      end
+    end
+    if shown == 0 then
+      say("nothing matches " .. tostring(filter))
+    elseif shown > 40 then
+      say(("...and %d more -- narrow it with |cffffd100/ffbg cvars <text>|r"):format(shown - 40))
+    end
   elseif command == "reset" then
     db.angle = DEFAULT_ANGLE
     db.hidden = nil

@@ -168,4 +168,39 @@ ForeverFogBeGoneDB.angle = 12
 slash("reset")
 assert(ForeverFogBeGoneDB.angle ~= 12, "reset puts it back where it started")
 
+-- 7. The right button is a different setting, and the two must not cross.
+--
+-- Crossing them is the failure worth guarding: both are booleans written the
+-- same way, so a left click that flipped the sharpening instead of the fog
+-- would look like the button simply not working, and the chat line would even
+-- say the right thing about the wrong variable.
+store.ResampleAlwaysSharpen = "0"
+store.volumeFog = "1"
+local before = #recorded.cvars
+click(button, "LeftButton")
+assert(store.volumeFog == "0", "a left click still flips the fog")
+assert(store.ResampleAlwaysSharpen == "0", "a left click must not touch the sharpening")
+assert(#recorded.cvars == before + 1, "a left click writes exactly one setting")
+
+before = #recorded.cvars
+click(button, "RightButton")
+assert(store.ResampleAlwaysSharpen == "1", "a right click flips the sharpening")
+assert(store.volumeFog == "0", "a right click must not touch the fog")
+assert(#recorded.cvars == before + 1, "a right click writes exactly one setting")
+assert(recorded.cvars[#recorded.cvars][1] == "ResampleAlwaysSharpen",
+  "and it writes that one by name")
+
+slash("sharpen")
+assert(store.ResampleAlwaysSharpen == "0", "/ffbg sharpen toggles it too")
+
+-- A client without the setting is told, and nothing is written.
+store.ResampleAlwaysSharpen = nil
+before = #recorded.cvars
+slash("sharpen")
+assert(#recorded.cvars == before, "a setting that is not there is not written to")
+assert(recorded.messages[#recorded.messages]:find("ResampleAlwaysSharpen"),
+  "and the message names it")
+store.ResampleAlwaysSharpen = "0"
+print("button: the right mouse button is the sharpening, and the two do not cross")
+
 print("button: ok")
