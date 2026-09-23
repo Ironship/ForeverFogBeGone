@@ -25,7 +25,10 @@ import zipfile
 
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 NAME = "ForeverFogBeGone"
-OUT = ROOT.parent.parent / "curseforge-packages"
+# Every archive waiting for CurseForge sits in one folder on the Desktop. The
+# old curseforge-packages beside it was emptied of stale builds and deleted;
+# writing there would quietly bring it back.
+OUT = ROOT.parent.parent / "CurseForge-do-wgrania"
 
 
 def tracked():
