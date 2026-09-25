@@ -1,7 +1,7 @@
 # ForeverFogBeGone!
 
-One button on the minimap. Click it and the volumetric fog is gone; click it
-again and it is back.
+One button on the minimap. Click it and the volumetric fog is gone from the
+next start of the game; click it again and it is back.
 
 <img src="curseforge/foreverfogbegone-400.png" width="128" alt="the addon's icon: fog bands with a red stroke through them">
 
@@ -17,7 +17,7 @@ time the console settings are wiped.
 
 
 **Left-click** for the fog. The mist is crossed out when the fog is off and unstruck when it is back.
-The button shows the current state.
+The button shows the state you chose.
 Drag it to move it around the minimap; where you put it is remembered.
 
 **Right-click** for sharpening. `ResampleAlwaysSharpen` decides whether the
@@ -25,13 +25,13 @@ picture is sharpened after being resampled, which is what happens whenever the
 game is not drawing at the monitor's own resolution. There is no tick box for
 it. The icon does not change for this one: it says the fog.
 
-It will not change the setting while you are in the world; the change is recorded
-and applies at your next login, before the world loads. In combat, it also refuses
-and says so. The button dims slightly when a change is waiting.
-
-Changes apply immediately before login, during addon load, or after `/reload` from
-the character select screen. Use `/ffbg now` as an emergency escape hatch if a
-change must apply in the world (but this is risky and triggers a warning).
+Neither setting is changed while you play. A click records your choice, and
+the addon writes it when you log out or quit, so the game starts with it next
+time. On Forever build 1.60.1.70009, turning the fog on in the world froze the
+game until it was closed; a game that starts with the setting never did. The
+tooltip shows what is waiting, and `/ffbg log` shows what was written and
+whether it stuck. `/ffbg now!` writes it straight away, for a client where
+that is safe again.
 
 `/ffbg cvars <text>` lists the client's own console variables whose name
 contains that text, with their current value and the client's description of
@@ -48,9 +48,9 @@ files and a dependency for one button, and this addon *is* one button.
 TGA textures and CurseForge images. Both fog states use the same square, painted
 icon: crossed-out mist means fog is off; plain mist means fog is on.
 
-`tests/button.test.lua` covers the button, the toggle, the picture following
-the setting, the combat refusal, the missing-setting case and the slash
-commands. Ten deliberate breakages of `Core.lua` each fail it.
+`tests/button.test.lua` covers the button, the picture following the choice,
+the missing-setting case, the slash commands, and the write itself: never on a
+click, never on a `/reload`, once at logout, checked at the next load.
 
 ```
 lua tests/button.test.lua

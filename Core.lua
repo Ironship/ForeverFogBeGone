@@ -10,22 +10,35 @@ local ADDON_NAME = ...
 -- The button is drawn here rather than through LibDBIcon. That library would
 -- be four files and a dependency for one icon, and this addon is one icon.
 --
--- CVar changes are deferred to prevent game freezes. On build 70009 of WoW
--- Forever, calling SetCVar during gameplay triggers "Render Settings Changed"
--- which exhausts the GPU descriptor heap on RTX 4090 and freezes the game.
--- Instead, clicks record what the player wants and apply it on the next fresh
--- login, before the world loads. PLAYER_ENTERING_WORLD with isInitialLogin=true
--- distinguishes a fresh login from a /reload (which keeps the world loaded).
+-- The button never changes the setting while you play. It records what you
+-- chose, and the choice is written when you log out or quit, so the game
+-- starts with it next time. That is not caution for its own sake. On Forever
+-- build 1.60.1.70009 (September 2026) a click that turned the fog on in the
+-- world froze the game until it was closed: the client's gx.log shows "Render
+-- Settings Changed", then "OutOfMemory: AllocDescriptors Failed", a lost
+-- device, and a recovery that failed the same way. The same clicks had worked
+-- for days on the build before. What never froze was a game that started with
+-- the setting already in Config.wtf, and the client writes Config.wtf on the
+-- way out -- even in that broken state it shut down cleanly and saved. So the
+-- way out is where the setting is set.
+--
+-- The world is still loaded when PLAYER_LOGOUT fires, so the write can still
+-- hang the way out, once. It is the better place all the same: the game is
+-- leaving anyway, the client saves on shutdown even then, and the next start
+-- has the setting.
 
 local CVAR = "volumeFog"
 -- The right mouse button's setting. Sharpening after the picture has been
 -- resampled: it matters whenever the game is not rendering at the monitor's
 -- own resolution, which is most of the time once render scale or an upscaler
--- is in play, and there is no tick box for it in the options.
+-- is in play, and there is no tick box for it in the options. It is a render
+-- setting too, so it waits for the way out like the fog does.
 local SHARPEN_CVAR = "ResampleAlwaysSharpen"
+local LABEL = { [CVAR] = "volumetric fog", [SHARPEN_CVAR] = "sharpening" }
 local DEFAULT_ANGLE = 198        -- lower left, clear of the tracking button and the clock
 local ICON_CLEAR = "Interface\\AddOns\\" .. ADDON_NAME .. "\\icon"      -- fog struck through
 local ICON_FOG   = "Interface\\AddOns\\" .. ADDON_NAME .. "\\icon-fog"  -- fog, unstruck
+local LOG_SIZE = 50
 
 -- math.atan2 is in Lua 5.1 and the client still has it, but it is deprecated
 -- upstream and a client that drops it would take the button's drag with it and
@@ -34,7 +47,12 @@ local atan2 = math.atan2 or function(y, x) return math.atan(y, x) end
 
 local db
 local button
-local inWorld = false    -- tracks whether the world is currently loaded
+-- Set when this session asks for a UI reload. PLAYER_LOGOUT fires on a
+-- /reload as well, and a reload keeps the world loaded -- the one time the
+-- setting must not be written.
+local reloading = false
+-- What the load found out about the last change, said once the chat is up.
+local greetings = {}
 
 -- The CVar accessors moved namespace; both names exist on some clients and one
 -- on others, so neither is assumed.
@@ -56,16 +74,16 @@ local function setCVar(name, value)
   return true
 end
 
-local function fogIsOn()
-  local value = getCVar(CVAR)
-  if value == nil then return nil end       -- the client does not have this setting
-  return value ~= "0" and value ~= 0
+local function isOn(value)
+  return value ~= nil and value ~= "0" and value ~= 0
 end
 
-local function sharpenIsOn()
-  local value = getCVar(SHARPEN_CVAR)
-  if value == nil then return nil end
-  return value ~= "0" and value ~= 0
+-- Fog on is the bad news and reads red; sharpening on is the good news.
+local function stateText(name, on)
+  if (name == SHARPEN_CVAR) == (on and true or false) then
+    return on and "|cff7fdc7fon|r" or "|cff7fdc7foff|r"
+  end
+  return on and "|cffdc7f7fon|r" or "|cffdc7f7foff|r"
 end
 
 local function say(text)
@@ -74,61 +92,51 @@ local function say(text)
   end
 end
 
-local function logDiagnostic(event, cvar, value, detail1, detail2)
-  -- Keep a diagnostic log for troubleshooting freezes. Entries include:
-  -- time(), build info, what was requested, what was applied and when,
-  -- and the value read back. A /ffbg log command prints the last ~50 entries.
-  if not db then db = {} end
-  if not db.diagnosticLog then db.diagnosticLog = {} end
-  local log = db.diagnosticLog
-  local entry = {
-    time = time(),
-    build = select(3, GetBuildInfo()),
-    event = event,
-    cvar = cvar,
-    value = value,
-    detail1 = detail1,
-    detail2 = detail2,
-  }
-  table.insert(log, entry)
-  -- Keep only the last 50 entries.
-  if #log > 50 then
-    table.remove(log, 1)
-  end
+-- A few lines kept in the saved variables, so the next freeze -- or the next
+-- change that does not stick -- can be laid beside the client's own logs.
+-- Each line carries the build, because the build is what decided all this.
+local function note(text)
+  if not db then return end
+  if type(db.log) ~= "table" then db.log = {} end
+  local _, build = GetBuildInfo()
+  local stamp = date and date("%Y-%m-%d %H:%M:%S") or tostring(time and time() or "")
+  db.log[#db.log + 1] = stamp .. " b" .. tostring(build or "?") .. " " .. text
+  while #db.log > LOG_SIZE do table.remove(db.log, 1) end
 end
 
-local function printDiagnosticLog()
-  if not db or not db.diagnosticLog or #db.diagnosticLog == 0 then
-    say("diagnostic log is empty")
-    return
-  end
-  say("diagnostic log (last " .. #db.diagnosticLog .. " entries):")
-  for _, entry in ipairs(db.diagnosticLog) do
-    local msg = string.format("[%s build %s] %s %s=%s",
-      os.date("%H:%M:%S", entry.time), entry.build or "?", entry.event, entry.cvar or "?", entry.value or "?")
-    if entry.detail1 then
-      msg = msg .. " (" .. tostring(entry.detail1)
-      if entry.detail2 then msg = msg .. ": " .. tostring(entry.detail2) end
-      msg = msg .. ")"
-    end
-    say(msg)
-  end
+local function waiting(name)
+  local list = db and db.wishes
+  return type(list) == "table" and list[name] or nil
 end
 
--- Two pictures, not one picture dimmed. The button shows the state it is in:
--- fog struck through when there is no fog, plain fog when there is.
+-- What the player will have from the next start: the waiting choice if there
+-- is one, the live setting otherwise. nil when the client has no such setting.
+local function chosen(name)
+  local live = getCVar(name)
+  if live == nil then return nil end
+  local wish = waiting(name)
+  if wish ~= nil then return isOn(wish) end
+  return isOn(live)
+end
+
+local function pending(name)
+  local wish, live = waiting(name), getCVar(name)
+  return wish ~= nil and live ~= nil and isOn(wish) ~= isOn(live)
+end
+
+-- Two pictures, not one picture dimmed. The button shows the fog you chose:
+-- struck through when there will be none, plain fog when there will be. The
+-- choice rather than the live setting, so a click changes the picture at once,
+-- which is what a button is expected to do; the tooltip says when it happens.
 --
 -- The first version greyed the icon out instead, and seen in the game that
 -- took the red stroke -- the only part of the drawing that carries the
 -- meaning -- and turned it into a third grey bar. Beside Blizzard's own
 -- saturated minimap buttons it read as a control that was switched off, which
 -- is the wrong thing for a working button to say about itself.
---
--- If a wish is pending (a change requested while in the world), the button
--- shows the live state but is dimmed slightly to indicate a change is waiting.
 local function refresh()
   if not button then return end
-  local on = fogIsOn()
+  local on = chosen(CVAR)
   if on == nil then
     -- No such setting on this client. Show the fog, unstruck, dimmed a little,
     -- and let the tooltip say why: there is nothing here to turn off.
@@ -137,14 +145,7 @@ local function refresh()
     return
   end
   button.icon:SetTexture(on and ICON_FOG or ICON_CLEAR)
-  -- Check if there is a pending wish for the fog that differs from current state.
-  local pendingWish = db and db.wishes and db.wishes[CVAR]
-  if pendingWish and pendingWish ~= (on and "1" or "0") then
-    -- Dim slightly to show a change is waiting for next login.
-    button.icon:SetVertexColor(0.85, 0.85, 0.85)
-  else
-    button.icon:SetVertexColor(1, 1, 1)
-  end
+  button.icon:SetVertexColor(1, 1, 1)
 end
 
 local function position()
@@ -157,90 +158,80 @@ local function position()
     math.cos(angle) * radius, math.sin(angle) * radius)
 end
 
-local function applyWish(cvar, value, whenWasRequested)
-  -- Apply a single deferred wish. Returns true if successful.
-  local ok, err = setCVar(cvar, value)
-  if ok then
-    logDiagnostic("applied", cvar, value, whenWasRequested)
-    return true
-  else
-    logDiagnostic("failed", cvar, value, whenWasRequested, err)
-    return false
-  end
-end
-
-local function recordWish(cvar, value)
-  -- Record what the player wants and show when it will take effect.
-  if not db then db = {} end
-  if not db.wishes then db.wishes = {} end
-  db.wishes[cvar] = value
-  logDiagnostic("wish", cvar, value)
-end
-
-local function toggle()
-  local on = fogIsOn()
-  if on == nil then
-    say("this client has no |cffffd100" .. CVAR .. "|r setting, so there is nothing to turn off")
+-- A click. Nothing is written to the game here; see the top of the file.
+local function request(name)
+  local live = getCVar(name)
+  if live == nil then
+    say("this client has no |cffffd100" .. name .. "|r setting"
+      .. (name == CVAR and ", so there is nothing to turn off" or ""))
     return
   end
-  local newValue = on and "0" or "1"
-  -- Never call SetCVar while in the world. Record the wish and apply it at login.
-  if inWorld then
-    recordWish(CVAR, newValue)
-    refresh()
-    say(on and "volumetric fog |cff7fdc7foff|r (from the next login)" or "volumetric fog |cffdc7f7fback on|r (from the next login)")
+  local target = not chosen(name)
+  if type(db.wishes) ~= "table" then db.wishes = {} end
+  if target == isOn(live) then
+    -- Back to what the game already has: nothing is waiting any more.
+    db.wishes[name] = nil
+    if next(db.wishes) == nil then db.wishes = nil end
+    note("cancel " .. name .. ", stays " .. tostring(live))
+    say(LABEL[name] .. " stays " .. stateText(name, target) .. " -- nothing to change")
   else
-    -- Before the world is loaded or during a pure addon load, apply immediately.
-    local ok, err = setCVar(CVAR, newValue)
-    if not ok then
-      say("could not change it: " .. tostring(err))
-      return
+    db.wishes[name] = target and "1" or "0"
+    note("want " .. name .. "=" .. db.wishes[name] .. ", live " .. tostring(live))
+    say(LABEL[name] .. " " .. stateText(name, target) .. " from the next start of the game."
+      .. " It is saved when you log out or quit: changing it while you play"
+      .. " freezes this version of Forever.")
+  end
+  refresh()
+end
+
+-- Writes every waiting choice that differs from the live setting, and returns
+-- a line for each, for the log and, when asked for by hand, for the chat.
+local function write(when)
+  local lines = {}
+  if type(db.wishes) ~= "table" then return lines end
+  for name, value in pairs(db.wishes) do
+    local live = getCVar(name)
+    if live == nil then
+      db.wishes[name] = nil
+    elseif isOn(live) ~= isOn(value) then
+      local ok, err = setCVar(name, value)
+      local line = (ok and "set " or "could not set ") .. name .. "=" .. value
+        .. " at " .. when .. (ok and "" or (": " .. tostring(err)))
+      note(line)
+      lines[#lines + 1] = line
     end
-    refresh()
-    say(on and "volumetric fog |cff7fdc7foff|r" or "volumetric fog |cffdc7f7fback on|r")
   end
+  return lines
 end
 
-local function toggleSharpen()
-  local on = sharpenIsOn()
-  if on == nil then
-    say("this client has no |cffffd100" .. SHARPEN_CVAR .. "|r setting")
-    return
+-- Drops the choices the game already has.
+local function settle()
+  if type(db.wishes) ~= "table" then db.wishes = nil; return end
+  for name, value in pairs(db.wishes) do
+    local live = getCVar(name)
+    if live == nil or isOn(live) == isOn(value) then db.wishes[name] = nil end
   end
-  local newValue = on and "0" or "1"
-  -- Never call SetCVar while in the world. Record the wish and apply it at login.
-  if inWorld then
-    recordWish(SHARPEN_CVAR, newValue)
-    say(on and "sharpening |cffdc7f7foff|r (from the next login)" or "sharpening |cff7fdc7fon|r (from the next login)")
-  else
-    -- Before the world is loaded or during a pure addon load, apply immediately.
-    local ok, err = setCVar(SHARPEN_CVAR, newValue)
-    if not ok then
-      say("could not change it: " .. tostring(err))
-      return
+  if next(db.wishes) == nil then db.wishes = nil end
+end
+
+-- On load: did the last change stick? A choice the game now has is dropped
+-- and announced. One that a real logout should have written and did not is
+-- kept, logged and announced, and is written again at the next one.
+local function check()
+  if type(db.wishes) ~= "table" then db.wishes = nil; return end
+  for name, value in pairs(db.wishes) do
+    local live = getCVar(name)
+    if live ~= nil and isOn(live) == isOn(value) then
+      note("took effect: " .. name .. "=" .. tostring(live))
+      greetings[#greetings + 1] = LABEL[name] .. " is " .. stateText(name, isOn(live)) .. " now, as you chose"
+    elseif live ~= nil and db.lastExit == "logout" then
+      note("did not take effect: " .. name .. " is " .. tostring(live) .. ", wanted " .. value)
+      greetings[#greetings + 1] = LABEL[name] .. " did not change at the last logout;"
+        .. " it will be written again at the next one, or click the button to"
+        .. " cancel it (|cffffd100/ffbg log|r)"
     end
-    say(on and "sharpening |cffdc7f7foff|r" or "sharpening |cff7fdc7fon|r")
   end
-end
-
-local function applyNow(cvar)
-  -- Emergency escape hatch: apply a pending wish immediately after a warning.
-  -- This is only for cases where deferred application is not feasible.
-  -- Refuse if in-world, since SetCVar during gameplay can freeze the game.
-  if inWorld then
-    say("|cffff7f00ERROR:|r cannot apply immediately while in-world (would freeze the game). Use /reload to apply on next login.")
-    return
-  end
-  if not db or not db.wishes or not db.wishes[cvar] then
-    say("no pending " .. cvar .. " change")
-    return
-  end
-  say("|cffff7f00WARNING:|r applying " .. cvar .. " change immediately")
-  local ok = applyWish(cvar, db.wishes[cvar], "now command")
-  if ok then
-    db.wishes[cvar] = nil
-    refresh()
-  end
+  settle()
 end
 
 -- Left for the fog, right for the sharpening. The icon keeps showing the fog
@@ -248,48 +239,34 @@ end
 -- the addon is named after.
 local function onClick(self, mouseButton)
   if mouseButton == "RightButton" then
-    toggleSharpen()
+    request(SHARPEN_CVAR)
   else
-    toggle()
+    request(CVAR)
   end
+end
+
+local function tooltipFor(name, verb)
+  local live = getCVar(name)
+  if live == nil then return false end
+  local label = LABEL[name]:gsub("^%l", string.upper)
+  GameTooltip:AddLine(label .. " is " .. stateText(name, isOn(live)) .. ".", nil, nil, nil, true)
+  if pending(name) then
+    GameTooltip:AddLine("From the next start: " .. stateText(name, chosen(name))
+      .. ". It is saved when you log out or quit.", 1, 0.82, 0, true)
+  end
+  GameTooltip:AddLine(verb .. " to turn it " .. (chosen(name) and "off" or "on")
+    .. " from the next start.", 0.7, 0.7, 0.7, true)
+  return true
 end
 
 local function tooltip(self)
   if not GameTooltip then return end
   GameTooltip:SetOwner(self, "ANCHOR_LEFT")
   GameTooltip:AddLine("ForeverFogBeGone!", 1, 1, 1)
-  local on = fogIsOn()
-  if on == nil then
+  if not tooltipFor(CVAR, "Click") then
     GameTooltip:AddLine("This client has no " .. CVAR .. " setting.", 1, 0.5, 0.5, true)
-  else
-    GameTooltip:AddLine(on and "Volumetric fog is |cffdc7f7fon|r."
-                           or "Volumetric fog is |cff7fdc7foff|r.", nil, nil, nil, true)
-    -- Check for pending wish and show when it will take effect.
-    local pendingFogWish = db and db.wishes and db.wishes[CVAR]
-    if pendingFogWish and pendingFogWish ~= (on and "1" or "0") then
-      local willBe = (pendingFogWish == "0") and "off" or "on"
-      GameTooltip:AddLine("Change to |cffffd100" .. willBe .. "|r pending (applies at next login).",
-        1, 1, 0.5, true)
-    else
-      GameTooltip:AddLine(on and "Click to turn it off." or "Click to turn it back on.",
-        0.7, 0.7, 0.7, true)
-    end
   end
-  local sharp = sharpenIsOn()
-  if sharp ~= nil then
-    GameTooltip:AddLine(sharp and "Sharpening is |cff7fdc7fon|r."
-                            or "Sharpening is |cffdc7f7foff|r.", nil, nil, nil, true)
-    -- Check for pending wish for sharpening.
-    local pendingSharpenWish = db and db.wishes and db.wishes[SHARPEN_CVAR]
-    if pendingSharpenWish and pendingSharpenWish ~= (sharp and "1" or "0") then
-      local willBe = (pendingSharpenWish == "0") and "off" or "on"
-      GameTooltip:AddLine("Change to |cffffd100" .. willBe .. "|r pending (applies at next login).",
-        1, 1, 0.5, true)
-    else
-      GameTooltip:AddLine("Right-click to turn it " .. (sharp and "off." or "on."),
-        0.7, 0.7, 0.7, true)
-    end
-  end
+  tooltipFor(SHARPEN_CVAR, "Right-click")
   GameTooltip:AddLine("Drag to move around the minimap.", 0.5, 0.5, 0.5, true)
   GameTooltip:Show()
 end
@@ -339,58 +316,54 @@ local function build()
   if db.hidden then button:Hide() end
 end
 
+-- A reload has to be recognised before PLAYER_LOGOUT, which it also fires.
+-- The slash command, the AddOns list and other addons reach it through one of
+-- these two names, so both are hooked; a post-hook leaves the call itself
+-- alone. `/console reloadui` goes round both and would still write the
+-- setting into the loaded world; nothing else is known to.
+local function markReload() reloading = true end
+if hooksecurefunc then
+  if type(ReloadUI) == "function" then hooksecurefunc("ReloadUI", markReload) end
+  if type(C_UI) == "table" and type(C_UI.Reload) == "function" then
+    hooksecurefunc(C_UI, "Reload", markReload)
+  end
+end
+
 local frame = CreateFrame("Frame")
 frame:RegisterEvent("ADDON_LOADED")
 frame:RegisterEvent("PLAYER_LOGIN")
-frame:RegisterEvent("PLAYER_ENTERING_WORLD")
+frame:RegisterEvent("PLAYER_LOGOUT")
 -- The graphics options can change the setting behind the addon's back, and the
 -- button would then show the opposite of the truth until something else made
 -- it redraw.
 frame:RegisterEvent("CVAR_UPDATE")
-frame:SetScript("OnEvent", function(_, event, arg1, arg2)
+frame:SetScript("OnEvent", function(_, event, arg1)
   if event == "ADDON_LOADED" then
     if arg1 ~= ADDON_NAME then return end
     if type(ForeverFogBeGoneDB) ~= "table" then ForeverFogBeGoneDB = {} end
     db = ForeverFogBeGoneDB
     if tonumber(db.angle) == nil then db.angle = DEFAULT_ANGLE end
-    logDiagnostic("addon_loaded")
+    -- A log under another name, from a build that was on GitHub for an hour.
+    db.diagnosticLog = nil
+    check()
+    db.lastExit = nil
   elseif event == "PLAYER_LOGIN" then
     build()
-    logDiagnostic("player_login")
-  elseif event == "PLAYER_ENTERING_WORLD" then
-    -- arg1 is isInitialLogin (true for fresh login), arg2 is isReloadingUi (true for /reload).
-    -- We distinguish fresh login from /reload to know when it is safe to apply deferred changes.
-    -- Fresh login: isInitialLogin=true, isReloadingUi=false (entering world for first time)
-    -- /reload: isInitialLogin=false, isReloadingUi=true (still in same world session)
-    -- Zone transition: isInitialLogin=false, isReloadingUi=false (still in same world session)
-    --
-    -- Apply pending wishes only on fresh login (isInitialLogin == true) before the
-    -- world is fully loaded. We set inWorld=true after checking for wishes, so that
-    -- clicks during that loading screen are deferred to the next login.
-    -- Handle boolean true, numeric 1, and string "1" for different client variants.
-    if arg1 == true or arg1 == 1 or arg1 == "1" then
-      -- Fresh login: apply any pending wishes now, while the loading screen is visible
-      -- but before the world is fully rendered.
-      logDiagnostic("fresh_login")
-      if db and db.wishes and type(db.wishes) == "table" then
-        for cvar, value in pairs(db.wishes) do
-          local ok = applyWish(cvar, value, "fresh_login")
-          -- Clear the wish only if it was successfully applied.
-          if ok then
-            db.wishes[cvar] = nil
-          end
-        end
-      end
+    for _, text in ipairs(greetings) do say(text) end
+    greetings = {}
+  elseif event == "PLAYER_LOGOUT" then
+    if not db then return end
+    if reloading then
+      db.lastExit = "reload"
     else
-      -- /reload or zone transition: world stays loaded, do not apply wishes.
-      logDiagnostic("world_transition")
+      db.lastExit = "logout"
+      write("logout")
     end
-    -- Mark that we are now in the world. After this, clicks will defer changes.
-    inWorld = true
   elseif event == "CVAR_UPDATE" then
-    -- arg1 is the variable's name on most builds and its display name on some.
+    -- arg1 is the variable's name on most builds and its display name on some,
+    -- so the comparison is loose and a needless redraw costs nothing.
     -- Only the fog changes the picture, so only the fog has to redraw it.
-    if button and (arg1 == CVAR) then refresh() end
+    if button and (arg1 == nil or tostring(arg1):lower():find("fog")) then refresh() end
   end
 end)
 
@@ -410,14 +383,27 @@ SlashCmdList["FOREVERFOGBEGONE"] = function(input)
     if button then button:Hide() end
     say("button hidden -- |cffffd100/ffbg show|r brings it back, |cffffd100/ffbg|r still toggles the fog")
   elseif command == "sharpen" then
-    toggleSharpen()
+    request(SHARPEN_CVAR)
   elseif command == "log" then
-    printDiagnosticLog()
-  elseif command == "now" then
-    say("|cffff7f00Emergency escape hatch:|r use only if deferred application fails")
-    -- Apply any pending fog wish immediately.
-    if db and db.wishes and db.wishes[CVAR] then
-      applyNow(CVAR)
+    if type(db.log) ~= "table" or #db.log == 0 then
+      say("nothing logged yet")
+      return
+    end
+    for _, line in ipairs(db.log) do say(line) end
+  elseif command == "now" or command == "now!" then
+    -- For a client where writing it in the world is safe again. Never the
+    -- default, and it takes a second, deliberate word to do it.
+    if not (pending(CVAR) or pending(SHARPEN_CVAR)) then
+      say("nothing is waiting")
+    elseif command == "now" then
+      say("this writes the waiting change into the running game. On Forever"
+        .. " 1.60.1.70009 that froze the game until it was closed."
+        .. " Type |cffffd100/ffbg now!|r to do it anyway.")
+    else
+      local lines = write("now")
+      for _, line in ipairs(lines) do say(line) end
+      settle()
+      refresh()
     end
   elseif command:match("^cvars") then
     -- What else is there? Nothing on disk knows: Config.wtf holds only the
@@ -456,6 +442,6 @@ SlashCmdList["FOREVERFOGBEGONE"] = function(input)
     position()
     say("button back where it started")
   else
-    toggle()
+    request(CVAR)
   end
 end
