@@ -73,13 +73,16 @@ DEFAULT_CHAT_FRAME = { AddMessage = function(_, text) recorded.messages[#recorde
 GetCursorPosition = function() return 560, 340 end
 InCombatLockdown = function() return recorded.inCombat or false end
 
-local store = { volumeFog = "1" }
+local store = { volumeFog = "1", ResampleAlwaysSharpen = "0" }
 GetCVar = function(name) return store[name] end
 SetCVar = function(name, value)
   if store[name] == nil then error("no such cvar: " .. tostring(name)) end
   store[name] = tostring(value)
   recorded.cvars[#recorded.cvars + 1] = { name, tostring(value) }
 end
+GetBuildInfo = function() return "World of Warcraft", "Forever", 70009, 16001 end
+time = function() return os.time() end
+os = os or require "os"
 
 -- The game's own slash-command table, which always exists. The addon may add a
 -- key to it and must never assign the global itself: on the modern client that
@@ -97,6 +100,7 @@ setmetatable(_G, {
 local chunk = assert(loadfile("Core.lua"))
 chunk("ForeverFogBeGone")
 assert(type(gameSlashCmdList.FOREVERFOGBEGONE) == "function", "the slash command is registered in the game's table")
+local CVAR = "volumeFog"  -- Used in assertions below
 
 local onEvent = frames.event.handlers.OnEvent
 assert(type(onEvent) == "function", "the addon listens for events")
@@ -216,5 +220,96 @@ assert(recorded.messages[#recorded.messages]:find("ResampleAlwaysSharpen"),
   "and the message names it")
 store.ResampleAlwaysSharpen = "0"
 print("button: the right mouse button is the sharpening, and the two do not cross")
+
+-- 8. In-world clicks record wishes; out-of-world clicks apply immediately.
+-- This is the fix for the freeze bug: SetCVar during gameplay triggers render
+-- settings recompilation, which exhausts the GPU descriptor heap on RTX 4090.
+-- Instead, clicks record what the player wants and apply it on next login.
+
+-- Simulate being in the world.
+recorded.inWorld = true
+local onEvent = frames.event.handlers.OnEvent
+onEvent(nil, "PLAYER_ENTERING_WORLD", true, false)  -- Fresh login
+recorded.inWorld = false
+
+-- Simulate entering the world after login.
+onEvent(nil, "PLAYER_ENTERING_WORLD", true, false)
+recorded.inWorld = true  -- Now in the world
+
+-- A click in the world should NOT call SetCVar, but record a wish.
+store.volumeFog = "1"
+before = #recorded.cvars
+click()
+assert(store.volumeFog == "1", "click in world does not change the live CVar")
+assert(#recorded.cvars == before, "and does not call SetCVar")
+assert(ForeverFogBeGoneDB.wishes and ForeverFogBeGoneDB.wishes[CVAR] == "0",
+  "but records what the player wanted")
+assert(recorded.messages[#recorded.messages]:lower():find("next login"),
+  "message should say when it takes effect: " .. tostring(recorded.messages[#recorded.messages]))
+print("button: in-world click records a wish instead of calling SetCVar")
+
+-- 9. Wishes survive a /reload and are not applied on /reload.
+-- A /reload keeps the world loaded (zone transition).
+before = #recorded.cvars
+onEvent(nil, "PLAYER_ENTERING_WORLD", false, true)  -- /reload: isInitialLogin=false, isReloadingUi=true
+assert(#recorded.cvars == before, "wishes are not applied during /reload")
+assert(ForeverFogBeGoneDB.wishes and ForeverFogBeGoneDB.wishes[CVAR] == "0",
+  "wish still there after /reload")
+print("button: wishes survive /reload and are not applied")
+
+-- 10. A fresh login applies pending wishes.
+-- After /reload, simulate another fresh login.
+before = #recorded.cvars
+onEvent(nil, "PLAYER_ENTERING_WORLD", true, false)  -- Fresh login again
+assert(#recorded.cvars == before + 1, "fresh login applies the wish")
+assert(store.volumeFog == "0", "and the CVar is now set to what was wished")
+assert(not (ForeverFogBeGoneDB.wishes and ForeverFogBeGoneDB.wishes[CVAR]),
+  "wish is cleared after being applied")
+print("button: fresh login applies pending wishes")
+
+-- 11. The diagnostic log records events.
+assert(ForeverFogBeGoneDB.diagnosticLog and #ForeverFogBeGoneDB.diagnosticLog > 0,
+  "diagnostic log is populated")
+local hasWishEntry = false
+local hasAppliedEntry = false
+for _, entry in ipairs(ForeverFogBeGoneDB.diagnosticLog) do
+  if entry.event == "wish" then hasWishEntry = true end
+  if entry.event == "applied" then hasAppliedEntry = true end
+end
+assert(hasWishEntry, "log records wishes")
+assert(hasAppliedEntry, "log records applied changes")
+print("button: diagnostic log records wishes and applied changes")
+
+-- 12. /ffbg log command prints the diagnostic log.
+recorded.messages = {}
+slash("log")
+assert(#recorded.messages > 0, "/ffbg log prints something")
+print("button: /ffbg log command works")
+
+-- 13. /ffbg now applies a pending wish immediately (escape hatch).
+-- Record a new wish first (outside world).
+recorded.inWorld = false
+store.volumeFog = "0"
+click()  -- Out of world, applies immediately
+store.volumeFog = "0"
+recorded.inWorld = true
+click()  -- In world, records a wish for "1"
+assert(ForeverFogBeGoneDB.wishes and ForeverFogBeGoneDB.wishes[CVAR] == "1",
+  "wish recorded for ON")
+before = #recorded.cvars
+slash("now")
+assert(#recorded.cvars == before + 1, "/ffbg now applies immediately")
+assert(store.volumeFog == "1", "and the CVar is set")
+assert(not (ForeverFogBeGoneDB.wishes and ForeverFogBeGoneDB.wishes[CVAR]),
+  "wish is cleared")
+print("button: /ffbg now applies immediately (escape hatch)")
+
+-- 14. The slash command table taint guard still works.
+-- The test harness prevents assigning the global SlashCmdList; if the addon
+-- broke this guard, the test itself would have failed earlier. This assertion
+-- just confirms the value is in the game's own table.
+assert(gameSlashCmdList.FOREVERFOGBEGONE == SlashCmdList.FOREVERFOGBEGONE,
+  "slash command is in the game's table, not assigned to the global")
+print("button: slash table taint guard still prevents global assignment")
 
 print("button: ok")

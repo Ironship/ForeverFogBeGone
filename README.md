@@ -25,8 +25,13 @@ picture is sharpened after being resampled, which is what happens whenever the
 game is not drawing at the monitor's own resolution. There is no tick box for
 it. The icon does not change for this one: it says the fog.
 
-It will not change the setting while you are in combat, and says so rather
-than failing quietly.
+It will not change the setting while you are in the world; the change is recorded
+and applies at your next login, before the world loads. In combat, it also refuses
+and says so. The button dims slightly when a change is waiting.
+
+Changes apply immediately before login, during addon load, or after `/reload` from
+the character select screen. Use `/ffbg now` as an emergency escape hatch if a
+change must apply in the world (but this is risky and triggers a warning).
 
 `/ffbg cvars <text>` lists the client's own console variables whose name
 contains that text, with their current value and the client's description of
