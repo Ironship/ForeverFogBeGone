@@ -16,8 +16,8 @@ time the console settings are wiped.
 <img width="2560" height="1440" alt="image" src="https://github.com/user-attachments/assets/32961dc4-38e8-43aa-8920-28b1e7460e05" />
 
 
-**Left-click** for the fog. The sign is lit when the fog is off — the button
-shows what it has done, not what it will do — and greyed when the fog is back.
+**Left-click** for the fog. The mist is crossed out when the fog is off and unstruck when it is back.
+The button shows the current state.
 Drag it to move it around the minimap; where you put it is remembered.
 
 **Right-click** for sharpening. `ResampleAlwaysSharpen` decides whether the
@@ -39,12 +39,9 @@ how to find the next setting worth a button.
 `Core.lua`, one icon, and nothing else — no libraries. LibDBIcon would be four
 files and a dependency for one button, and this addon *is* one button.
 
-`Tools/make_icon.py` draws the icon. It is drawn at 1024 pixels and shrunk,
-because the minimap shows it at about twenty, and every decision in it follows
-from those twenty pixels: a dark disc so it reads against snow and against a
-night sky, fog bands with hard white cores because a soft gradient at that
-size is a grey smudge, and one diagonal stroke, thin enough that the fog is
-still visible under it.
+`Tools/make_icon.py` exports the approved PNG artwork in `Tools/` as 64-pixel
+TGA textures and CurseForge images. Both fog states use the same square, painted
+icon: crossed-out mist means fog is off; plain mist means fog is on.
 
 `tests/button.test.lua` covers the button, the toggle, the picture following
 the setting, the combat refusal, the missing-setting case and the slash

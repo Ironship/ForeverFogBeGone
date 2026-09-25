@@ -186,8 +186,7 @@ local function build()
   icon:SetTexture(ICON_CLEAR)
   icon:SetSize(20, 20)
   icon:SetPoint("CENTER", button, "CENTER", 0, 1)
-  -- A round icon inside a round border: trimming the corners keeps the disc
-  -- from touching the ring.
+  -- Trim the artwork edges beneath the minimap border.
   icon:SetTexCoord(0.05, 0.95, 0.05, 0.95)
   button.icon = icon
 
