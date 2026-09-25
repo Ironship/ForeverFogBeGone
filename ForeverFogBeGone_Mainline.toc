@@ -1,4 +1,4 @@
-## Interface: 120100, 16001
+## Interface: 120100, 120105, 16001
 ## Title: ForeverFogBeGone!
 ## Notes: One button on the minimap. Left-click switches the volumetric fog off and on, right-click does the same for sharpening after upscaling. Neither has a tick box in the options.
 ## IconTexture: Interface\AddOns\ForeverFogBeGone\icon
