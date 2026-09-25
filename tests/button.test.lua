@@ -287,29 +287,79 @@ assert(#recorded.messages > 0, "/ffbg log prints something")
 print("button: /ffbg log command works")
 
 -- 13. /ffbg now applies a pending wish immediately (escape hatch).
--- Record a new wish first (outside world).
-recorded.inWorld = false
+-- But it refuses to run while in-world to prevent freezes.
+-- Record a wish while in-world (we are already in-world from test 12)
 store.volumeFog = "0"
-click()  -- Out of world, applies immediately
-store.volumeFog = "0"
-recorded.inWorld = true
-click()  -- In world, records a wish for "1"
+recorded.messages = {}
+before = #recorded.cvars
+click()
+assert(#recorded.cvars == before, "click in world doesn't call SetCVar")
 assert(ForeverFogBeGoneDB.wishes and ForeverFogBeGoneDB.wishes[CVAR] == "1",
   "wish recorded for ON")
+
+-- /ffbg now must refuse while in-world
 before = #recorded.cvars
 slash("now")
-assert(#recorded.cvars == before + 1, "/ffbg now applies immediately")
-assert(store.volumeFog == "1", "and the CVar is set")
+assert(#recorded.cvars == before, "/ffbg now refuses to run in-world (would freeze)")
+assert(recorded.messages[#recorded.messages]:lower():find("error"),
+  "error message about in-world: " .. tostring(recorded.messages[#recorded.messages]))
+assert(ForeverFogBeGoneDB.wishes and ForeverFogBeGoneDB.wishes[CVAR] == "1",
+  "wish still pending after refused /ffbg now")
+
+-- Now apply the wish on fresh login
+before = #recorded.cvars
+onEvent(nil, "PLAYER_ENTERING_WORLD", true, false)  -- Fresh login applies wishes
+assert(#recorded.cvars == before + 1, "fresh login applies the wish")
+assert(store.volumeFog == "1", "and the CVar is now set to what was wished")
 assert(not (ForeverFogBeGoneDB.wishes and ForeverFogBeGoneDB.wishes[CVAR]),
   "wish is cleared")
-print("button: /ffbg now applies immediately (escape hatch)")
+print("button: /ffbg now refuses in-world but deferred application works")
 
--- 14. The slash command table taint guard still works.
+-- 14. Button dimming only happens when wish differs from current state.
+-- After fresh login at end of test 13, we are in-world with no pending wishes.
+-- Record a wish and verify it dims the button.
+store.volumeFog = "1"  -- Fog is ON
+recorded.messages = {}
+click()  -- In world, records wish to turn it OFF
+assert(ForeverFogBeGoneDB.wishes and ForeverFogBeGoneDB.wishes[CVAR] == "0",
+  "wish recorded")
+
+-- Refresh to see button dimming
+onEvent(nil, "CVAR_UPDATE", "volumeFog")
+local icon = button.children[1]
+-- Button SHOULD be dimmed because wish differs from current state (on -> off)
+assert(icon.colour and icon.colour[1] == 0.85 and icon.colour[2] == 0.85 and icon.colour[3] == 0.85,
+  "button is dimmed when wish differs from current state: " .. tostring(icon.colour))
+
+-- Now verify button is NOT dimmed when wish matches current state
+-- First, manually set the fog and wish to the same state
+store.volumeFog = "0"  -- Set fog to OFF
+ForeverFogBeGoneDB.wishes[CVAR] = "0"  -- Wish is also OFF (matches current)
+onEvent(nil, "CVAR_UPDATE", "volumeFog")  -- Refresh button
+-- Button should NOT be dimmed
+assert(icon.colour == nil or (icon.colour[1] == 1 and icon.colour[2] == 1 and icon.colour[3] == 1),
+  "button not dimmed when wish matches current state: " .. tostring(icon.colour))
+
+print("button: button dimming only shows when wish differs from current state")
+
+-- 15. The slash command table taint guard still works.
 -- The test harness prevents assigning the global SlashCmdList; if the addon
 -- broke this guard, the test itself would have failed earlier. This assertion
 -- just confirms the value is in the game's own table.
 assert(gameSlashCmdList.FOREVERFOGBEGONE == SlashCmdList.FOREVERFOGBEGONE,
   "slash command is in the game's table, not assigned to the global")
 print("button: slash table taint guard still prevents global assignment")
+
+-- 16. SavedVariables corrupted wishes (non-table type) do not crash.
+-- Clear existing wishes first
+ForeverFogBeGoneDB.wishes = nil
+-- Simulate a fresh login to populate wishes
+onEvent(nil, "PLAYER_ENTERING_WORLD", true, false)
+-- Now corrupt the wishes
+ForeverFogBeGoneDB.wishes = "corrupted"  -- No longer a table
+local before = #recorded.cvars
+onEvent(nil, "PLAYER_ENTERING_WORLD", true, false)  -- Fresh login again
+assert(#recorded.cvars == before, "corrupted wishes do not cause SetCVar calls (safely skipped)")
+print("button: corrupted SavedVariables are safely skipped")
 
 print("button: ok")

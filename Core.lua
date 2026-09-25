@@ -137,9 +137,9 @@ local function refresh()
     return
   end
   button.icon:SetTexture(on and ICON_FOG or ICON_CLEAR)
-  -- Check if there is a pending wish for the fog.
+  -- Check if there is a pending wish for the fog that differs from current state.
   local pendingWish = db and db.wishes and db.wishes[CVAR]
-  if pendingWish then
+  if pendingWish and pendingWish ~= (on and "1" or "0") then
     -- Dim slightly to show a change is waiting for next login.
     button.icon:SetVertexColor(0.85, 0.85, 0.85)
   else
@@ -226,6 +226,11 @@ end
 local function applyNow(cvar)
   -- Emergency escape hatch: apply a pending wish immediately after a warning.
   -- This is only for cases where deferred application is not feasible.
+  -- Refuse if in-world, since SetCVar during gameplay can freeze the game.
+  if inWorld then
+    say("|cffff7f00ERROR:|r cannot apply immediately while in-world (would freeze the game). Use /reload to apply on next login.")
+    return
+  end
   if not db or not db.wishes or not db.wishes[cvar] then
     say("no pending " .. cvar .. " change")
     return
@@ -362,15 +367,18 @@ frame:SetScript("OnEvent", function(_, event, arg1, arg2)
     -- Apply pending wishes only on fresh login (isInitialLogin == true) before the
     -- world is fully loaded. We set inWorld=true after checking for wishes, so that
     -- clicks during that loading screen are deferred to the next login.
-    if arg1 == true or arg1 == "1" then
+    -- Handle boolean true, numeric 1, and string "1" for different client variants.
+    if arg1 == true or arg1 == 1 or arg1 == "1" then
       -- Fresh login: apply any pending wishes now, while the loading screen is visible
       -- but before the world is fully rendered.
       logDiagnostic("fresh_login")
-      if db and db.wishes then
+      if db and db.wishes and type(db.wishes) == "table" then
         for cvar, value in pairs(db.wishes) do
-          applyWish(cvar, value, "fresh_login")
-          -- Clear the wish after it is applied.
-          db.wishes[cvar] = nil
+          local ok = applyWish(cvar, value, "fresh_login")
+          -- Clear the wish only if it was successfully applied.
+          if ok then
+            db.wishes[cvar] = nil
+          end
         end
       end
     else
@@ -380,10 +388,9 @@ frame:SetScript("OnEvent", function(_, event, arg1, arg2)
     -- Mark that we are now in the world. After this, clicks will defer changes.
     inWorld = true
   elseif event == "CVAR_UPDATE" then
-    -- arg1 is the variable's name on most builds and its display name on some,
-    -- so the comparison is loose and a needless redraw costs nothing.
+    -- arg1 is the variable's name on most builds and its display name on some.
     -- Only the fog changes the picture, so only the fog has to redraw it.
-    if button and (arg1 == nil or tostring(arg1):lower():find("fog")) then refresh() end
+    if button and (arg1 == CVAR) then refresh() end
   end
 end)
 
