@@ -81,8 +81,22 @@ SetCVar = function(name, value)
   recorded.cvars[#recorded.cvars + 1] = { name, tostring(value) }
 end
 
+-- The game's own slash-command table, which always exists. The addon may add a
+-- key to it and must never assign the global itself: on the modern client that
+-- taints it, and the next secure code to read it (the /run prompt, for one) is
+-- blocked and blamed on the addon. Kept out of _G so an assignment is caught.
+local gameSlashCmdList = {}
+setmetatable(_G, {
+  __index = function(_, key) if key == "SlashCmdList" then return gameSlashCmdList end end,
+  __newindex = function(t, key, value)
+    if key == "SlashCmdList" then error("the addon assigns the global SlashCmdList, which taints it", 2) end
+    rawset(t, key, value)
+  end,
+})
+
 local chunk = assert(loadfile("Core.lua"))
 chunk("ForeverFogBeGone")
+assert(type(gameSlashCmdList.FOREVERFOGBEGONE) == "function", "the slash command is registered in the game's table")
 
 local onEvent = frames.event.handlers.OnEvent
 assert(type(onEvent) == "function", "the addon listens for events")

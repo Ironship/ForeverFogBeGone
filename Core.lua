@@ -233,7 +233,9 @@ end)
 
 SLASH_FOREVERFOGBEGONE1 = "/fogbegone"
 SLASH_FOREVERFOGBEGONE2 = "/ffbg"
-SlashCmdList = SlashCmdList or {}
+-- Only a key of the game's own table is written. Assigning the global itself
+-- ("SlashCmdList = SlashCmdList or {}") taints it, and the next secure code to
+-- read it is blocked and blamed on this addon.
 SlashCmdList["FOREVERFOGBEGONE"] = function(input)
   local command = (input or ""):lower():gsub("^%s+", ""):gsub("%s+$", "")
   if command == "show" then
